@@ -184,10 +184,9 @@ class MainActivity : AppCompatActivity() {
             // 투시변환 된 결과 영상 얻기
             val dst = Mat()
             Imgproc.warpPerspective(src, dst, perspectiveTransform, Size(dw, dh))
-            val dst2 = Mat()
-            Imgproc.cvtColor(dst, dst2, Imgproc.COLOR_BGR2RGB)
-            val bitmap = Bitmap.createBitmap(dst2.cols(), dst2.rows(), Bitmap.Config.ARGB_8888)
-            Utils.matToBitmap(dst2, bitmap)
+
+            val bitmap = Bitmap.createBitmap(dst.cols(), dst.rows(), Bitmap.Config.ARGB_8888)
+            Utils.matToBitmap(dst, bitmap)
             binding.imageView.setImageBitmap(bitmap)
 
         }
