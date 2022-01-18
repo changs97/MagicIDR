@@ -188,7 +188,6 @@ class MainActivity : AppCompatActivity() {
             val bitmap = Bitmap.createBitmap(dst.cols(), dst.rows(), Bitmap.Config.ARGB_8888)
             Utils.matToBitmap(dst, bitmap)
             binding.imageView.setImageBitmap(bitmap)
-
         }
     }
 
