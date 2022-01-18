@@ -72,14 +72,15 @@ class MainActivity : AppCompatActivity() {
 
     private fun getImage(bitmap : Bitmap) {
         // 흑백영상으로 전환
-        val mat = Mat()
-        Utils.bitmapToMat(bitmap, mat)
+        val src = Mat()
+        val graySrc = Mat()
+        Utils.bitmapToMat(bitmap, src)
 
-        Imgproc.cvtColor(mat, mat, Imgproc.COLOR_BGR2GRAY)
+        Imgproc.cvtColor(src, graySrc, Imgproc.COLOR_BGR2GRAY)
 
         // 이진화
         val binarySrc = Mat()
-        Imgproc.threshold(mat, binarySrc, 0.0, 255.0, Imgproc.THRESH_OTSU)
+        Imgproc.threshold(graySrc, binarySrc, 0.0, 255.0, Imgproc.THRESH_OTSU)
 
         // 윤곽선 찾기
         val contours = ArrayList<MatOfPoint>()
@@ -182,14 +183,12 @@ class MainActivity : AppCompatActivity() {
 
             // 투시변환 된 결과 영상 얻기
             val dst = Mat()
-            Imgproc.warpPerspective(mat, dst, perspectiveTransform, Size(dw, dh))
-            var bmp: Bitmap? = null
-            val rgbMat = Mat()
-            Imgproc.cvtColor(dst, rgbMat, Imgproc.COLOR_BGR2RGB)
-            bmp = Bitmap.createBitmap(rgbMat.cols(), rgbMat.rows(), Bitmap.Config.ARGB_8888)
-            Utils.matToBitmap(rgbMat, bmp)
-
-            binding.imageView.setImageBitmap(bmp)
+            Imgproc.warpPerspective(src, dst, perspectiveTransform, Size(dw, dh))
+            val dst2 = Mat()
+            Imgproc.cvtColor(dst, dst2, Imgproc.COLOR_BGR2RGB)
+            val bitmap = Bitmap.createBitmap(dst2.cols(), dst2.rows(), Bitmap.Config.ARGB_8888)
+            Utils.matToBitmap(dst2, bitmap)
+            binding.imageView.setImageBitmap(bitmap)
 
         }
     }
