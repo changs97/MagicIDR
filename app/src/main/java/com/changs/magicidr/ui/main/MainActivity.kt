@@ -1,68 +1,72 @@
 package com.changs.magicidr.ui.main
 
-import android.Manifest
-import android.app.Activity
+
+import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.graphics.Bitmap
-import android.os.Build
+import android.graphics.BitmapFactory
+import android.graphics.drawable.Drawable
+import android.net.Uri
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
+import android.os.Environment
 import android.provider.MediaStore
-import android.view.View.VISIBLE
+import android.util.Log
+import android.view.View.*
 import android.widget.Toast
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import com.changs.magicidr.databinding.MainActivityBinding
 import org.opencv.android.OpenCVLoader
 import org.opencv.android.Utils
 import org.opencv.core.*
 import org.opencv.imgproc.Imgproc
-import javax.crypto.Mac
 import kotlin.math.max
 import kotlin.math.sqrt
 import org.opencv.core.Mat
+import java.io.File
+import java.io.IOException
+import java.text.SimpleDateFormat
+import java.util.*
+import kotlin.collections.ArrayList
+import androidx.annotation.NonNull
+import androidx.annotation.Nullable
 
+import com.bumptech.glide.request.target.CustomTarget
 
+import com.bumptech.glide.Glide
+import com.bumptech.glide.request.transition.Transition
 
 
 class MainActivity : AppCompatActivity() {
 
 
-    //Manifest 에서 설정한 권한을 가지고 온다.
-    val CAMERA_PERMISSION = arrayOf(Manifest.permission.CAMERA)
-    val STORAGE_PERMISSION = arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE,Manifest.permission.WRITE_EXTERNAL_STORAGE)
+    private val REQUEST_TAKE_PHOTO = 1
+    private lateinit var currentPhotoPath: String
 
-    //권한 플래그값 정의
-    val FLAG_PERM_CAMERA = 98
-    val FLAG_PERM_STORAGE = 99
-
-    //카메라와 갤러리를 호출하는 플래그
-    val FLAG_REQ_CAMERA = 101
-    val FLAG_REA_STORAGE = 102
 
     val binding by lazy { MainActivityBinding.inflate(layoutInflater)}
 
-    var bitmap : Bitmap? = null
+    var btm : Bitmap? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(binding.root)
 
+
         // 화면이 만들어 지면서 정장소 권한을 체크 합니다.
         // 권한이 승인되어 있으면 카메라를 호출하는 메소드를 실행합니다.
-        if(checkPermission(STORAGE_PERMISSION,FLAG_PERM_STORAGE)){
-            setViews()
+        binding.button.setOnClickListener {
+            cleanView()
+            takePictureIntent()
         }
+
         binding.button2.setOnClickListener {
-            if (bitmap != null) {
+            if (btm != null) {
                 OpenCVLoader.initDebug()
-                getImage(bitmap!!)
+                getImage(btm!!)
             }
 
         }
-
-
 
     }
 
@@ -99,15 +103,19 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+
         if (biggestContour == null) {
-            throw IllegalArgumentException("No Contour")
+            binding.textView1.text = "No Contour"
+            binding.textView1.visibility = VISIBLE
+            Toast.makeText(this, "restart", Toast.LENGTH_SHORT).show()
         }
         // 너무 작아도 안됨
         if (biggestContourArea < 400) {
-            throw IllegalArgumentException("too small")
+            binding.textView2.text =  "too small"
+            binding.textView2.visibility = VISIBLE
         }
 
-        val candidate2f = MatOfPoint2f(*biggestContour.toArray())
+        val candidate2f = MatOfPoint2f(*biggestContour?.toArray())
         val approxCandidate = MatOfPoint2f()
         Imgproc.approxPolyDP(
             candidate2f,
@@ -118,64 +126,82 @@ class MainActivity : AppCompatActivity() {
 
         // 사각형 판별
         if (approxCandidate.rows() != 4) {
-            throw java.lang.IllegalArgumentException("It's not rectangle")
+            binding.textView3.text = "It's not rectangle"
+            binding.textView3.visibility = VISIBLE
         }
 
         // 컨벡스(볼록한 도형)인지 판별
         if (!Imgproc.isContourConvex(MatOfPoint(*approxCandidate.toArray()))) {
-            throw java.lang.IllegalArgumentException("It's not convex")
+            binding.textView4.text = "It's not convex"
+            binding.textView4.visibility = VISIBLE
         }
 
-        // 좌상단부터 시계 반대 방향으로 정점을 정렬한다.
-        val points = arrayListOf(
-            Point(approxCandidate.get(0, 0)[0], approxCandidate.get(0, 0)[1]),
-            Point(approxCandidate.get(1, 0)[0], approxCandidate.get(1, 0)[1]),
-            Point(approxCandidate.get(2, 0)[0], approxCandidate.get(2, 0)[1]),
-            Point(approxCandidate.get(3, 0)[0], approxCandidate.get(3, 0)[1]),
-        )
-        points.sortBy { it.x } // x좌표 기준으로 먼저 정렬
+        if(biggestContour == null || biggestContourArea < 400 || approxCandidate.rows() != 4 ||
+            !Imgproc.isContourConvex(MatOfPoint(*approxCandidate.toArray()))) {
+            Toast.makeText(this, "restart", Toast.LENGTH_SHORT).show()
+        } else {
+            // 좌상단부터 시계 반대 방향으로 정점을 정렬한다.
+            val points = arrayListOf(
+                Point(approxCandidate.get(0, 0)[0], approxCandidate.get(0, 0)[1]),
+                Point(approxCandidate.get(1, 0)[0], approxCandidate.get(1, 0)[1]),
+                Point(approxCandidate.get(2, 0)[0], approxCandidate.get(2, 0)[1]),
+                Point(approxCandidate.get(3, 0)[0], approxCandidate.get(3, 0)[1]),
+            )
+            points.sortBy { it.x } // x좌표 기준으로 먼저 정렬
 
-        if (points[0].y > points[1].y) {
-            val temp = points[0]
-            points[0] = points[1]
-            points[1] = temp
+            if (points[0].y > points[1].y) {
+                val temp = points[0]
+                points[0] = points[1]
+                points[1] = temp
+            }
+
+            if (points[2].y < points[3].y) {
+                val temp = points[2]
+                points[2] = points[3]
+                points[3] = temp
+            }
+            // 원본 영상 내 정점들
+            val srcQuad = MatOfPoint2f().apply { fromList(points) }
+
+            val maxSize = calculateMaxWidthHeight(
+                tl = points[0],
+                bl = points[1],
+                br = points[2],
+                tr = points[3]
+            )
+            val dw = maxSize.width
+            val dh = dw * maxSize.height/maxSize.width
+            val dstQuad = MatOfPoint2f(
+                Point(0.0, 0.0),
+                Point(0.0, dh),
+                Point(dw, dh),
+                Point(dw, 0.0)
+            )
+            // 투시변환 매트릭스 구하기
+            val perspectiveTransform = Imgproc.getPerspectiveTransform(srcQuad, dstQuad)
+
+            // 투시변환 된 결과 영상 얻기
+            val dst = Mat()
+            Imgproc.warpPerspective(mat, dst, perspectiveTransform, Size(dw, dh))
+            var bmp: Bitmap? = null
+            val rgbMat = Mat()
+            Imgproc.cvtColor(dst, rgbMat, Imgproc.COLOR_BGR2RGB)
+            bmp = Bitmap.createBitmap(rgbMat.cols(), rgbMat.rows(), Bitmap.Config.ARGB_8888)
+            Utils.matToBitmap(rgbMat, bmp)
+
+            binding.imageView.setImageBitmap(bmp)
+
         }
+    }
 
-        if (points[2].y < points[3].y) {
-            val temp = points[2]
-            points[2] = points[3]
-            points[3] = temp
-        }
-        // 원본 영상 내 정점들
-        val srcQuad = MatOfPoint2f().apply { fromList(points) }
 
-        val maxSize = calculateMaxWidthHeight(
-            tl = points[0],
-            bl = points[1],
-            br = points[2],
-            tr = points[3]
-        )
-        val dw = maxSize.width
-        val dh = dw * maxSize.height/maxSize.width
-        val dstQuad = MatOfPoint2f(
-            Point(0.0, 0.0),
-            Point(0.0, dh),
-            Point(dw, dh),
-            Point(dw, 0.0)
-        )
-        // 투시변환 매트릭스 구하기
-        val perspectiveTransform = Imgproc.getPerspectiveTransform(srcQuad, dstQuad)
-
-        // 투시변환 된 결과 영상 얻기
-        val dst = Mat()
-        Imgproc.warpPerspective(mat, dst, perspectiveTransform, Size(dw, dh))
-        var bmp: Bitmap? = null
-        val rgbMat = Mat()
-        Imgproc.cvtColor(dst, rgbMat, Imgproc.COLOR_BGR2RGB)
-        bmp = Bitmap.createBitmap(rgbMat.cols(), rgbMat.rows(), Bitmap.Config.ARGB_8888)
-        Utils.matToBitmap(rgbMat, bmp)
-
-        binding.imageView.setImageBitmap(bmp)
+    fun cleanView() {
+        btm = null
+        binding.imageView.visibility = INVISIBLE
+        binding.textView1.visibility = GONE
+        binding.textView2.visibility = GONE
+        binding.textView3.visibility = GONE
+        binding.textView4.visibility = GONE
 
     }
 
@@ -198,82 +224,88 @@ class MainActivity : AppCompatActivity() {
         return Size(maxWidth, maxHeight)
     }
 
-    private fun setViews() {
-        //카메라 버튼 클릭
-        binding.button.setOnClickListener {
-            //카메라 호출 메소드
-            openCamera()
-        }
-    }
 
 
-    private fun openCamera() {
-        //카메라 권한이 있는지 확인
-        if(checkPermission(CAMERA_PERMISSION,FLAG_PERM_CAMERA)){
-            //권한이 있으면 카메라를 실행시킵니다.
-            val intent:Intent = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
-            startActivityForResult(intent,FLAG_REQ_CAMERA)
-        }
-    }
-
-    //권한이 있는지 체크하는 메소드
-    fun checkPermission(permissions:Array<out String>,flag:Int):Boolean{
-        //안드로이드 버전이 마쉬멜로우 이상일때
-        if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.M){
-            for(permission in permissions){
-                //만약 권한이 승인되어 있지 않다면 권한승인 요청을 사용에 화면에 호출합니다.
-                if(ContextCompat.checkSelfPermission(this,permission) != PackageManager.PERMISSION_GRANTED){
-                    ActivityCompat.requestPermissions(this,permissions,flag)
-                    return false
+    // 사진 찍는 인텐트
+    private fun takePictureIntent(){
+        Intent(MediaStore.ACTION_IMAGE_CAPTURE).also { takePictureIntent ->
+            takePictureIntent.resolveActivity(packageManager)?.also {
+                // 사진 파일을 만듭니다.
+                val photoFile: File? = try {
+                    createImageFile()
+                } catch (ex: IOException) {
+                    // Error occurred while creating the File
+                    Log.d("test", "error: $ex")
+                    null
+                }
+                // photoUri를 보내는 코드
+                photoFile?.also {
+                    val photoURI: Uri = FileProvider.getUriForFile(
+                        this,
+                        "com.changs.magicidr",
+                        it
+                    )
+                    takePictureIntent.putExtra(MediaStore.EXTRA_OUTPUT, photoURI)
+                    startActivityForResult(takePictureIntent, REQUEST_TAKE_PHOTO)
                 }
             }
         }
-        return true
     }
 
-    //checkPermission() 에서 ActivityCompat.requestPermissions 을 호출한 다음 사용자가 권한 허용여부를 선택하면 해당 메소드로 값이 전달 됩니다.
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-
-        when(requestCode){
-            FLAG_PERM_STORAGE ->{
-                for(grant in grantResults){
-                    if(grant != PackageManager.PERMISSION_GRANTED){
-                        //권한이 승인되지 않았다면 return 을 사용하여 메소드를 종료시켜 줍니다
-                        Toast.makeText(this,"저장소 권한을 승인해야지만 앱을 사용할 수 있습니다..",Toast.LENGTH_SHORT).show()
-                        finish()
-                        return
-                    }
-                }
-                //카메라 호출 메소드
-                setViews()
-            }
-            FLAG_PERM_CAMERA ->{
-                for(grant in grantResults){
-                    if(grant != PackageManager.PERMISSION_GRANTED){
-                        Toast.makeText(this,"카메라 권한을 승인해야지만 카메라를 사용할 수 있습니다.",Toast.LENGTH_SHORT).show()
-                        return
-                    }
-                }
-                openCamera()
-            }
-        }
-    }
-
-    //startActivityForResult 을 사용한 다음 돌아오는 결과값을 해당 메소드로 호출합니다.
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if(resultCode == Activity.RESULT_OK){
-            when(requestCode){
-                FLAG_REQ_CAMERA ->{
-                    if(data?.extras?.get("data") != null){
-                        //카메라로 방금 촬영한 이미지를 미리 만들어 놓은 이미지뷰로 전달 합니다.
-                        bitmap = data?.extras?.get("data") as Bitmap
-                        binding.imageView.setImageBitmap(bitmap)
-                        binding.imageView.visibility = VISIBLE
-                    }
-                }
-            }
+        if (requestCode == REQUEST_TAKE_PHOTO && resultCode == RESULT_OK) {
+            galleryAddPic()
+            setPic()
         }
     }
+
+    // 사진 파일을 만드는 메소드
+    @Throws(IOException::class)
+    private fun createImageFile(): File {
+        // Create an image file name
+        val timeStamp: String = SimpleDateFormat("yyyyMMdd_HHmmss").format(Date())
+        val storageDir: File? = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
+        return File.createTempFile(
+            "JPEG_${timeStamp}_", /* prefix */
+            ".jpg", /* suffix */
+            storageDir /* directory */
+        ).apply {
+            // Save a file: path for use with ACTION_VIEW intents
+            currentPhotoPath = absolutePath
+            Log.d("test", "currentPhotoPath : $currentPhotoPath")
+        }
+    }
+
+    // 갤러리에 파일을 추가하는 함수.
+    private fun galleryAddPic() {
+        Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE).also { mediaScanIntent ->
+            Log.d("test", "currentPhotoPath2 : $currentPhotoPath")
+            val f = File(currentPhotoPath)
+            mediaScanIntent.data = Uri.fromFile(f)
+            sendBroadcast(mediaScanIntent)
+        }
+    }
+
+    // ImageView에 사진을 넣는 메소드
+    private fun setPic() {
+        Glide.with(this)
+            .asBitmap()
+            .load(currentPhotoPath)
+            .into(object : CustomTarget<Bitmap?>() {
+                override fun onResourceReady(
+                    resource: Bitmap,
+                    @Nullable transition: Transition<in Bitmap?>?
+                ) {
+                    // 이미지를 비트맵으로 변환 완료
+                    binding.imageView.setImageBitmap(resource)
+                    binding.imageView.visibility = VISIBLE
+                    btm = resource
+                }
+                override fun onLoadCleared(@Nullable placeholder: Drawable?) {}
+            })
+
+        }
+
+
 }
